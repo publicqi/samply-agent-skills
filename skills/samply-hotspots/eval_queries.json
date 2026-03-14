@@ -1,0 +1,66 @@
+[
+  {
+    "query": "I have profile.json.gz from samply; give me the top CPU hotspots in machine-readable form",
+    "should_trigger": true
+  },
+  {
+    "query": "summarize this Firefox processed profile without opening the UI",
+    "should_trigger": true
+  },
+  {
+    "query": "rank the hottest threads and stacks from this samply capture",
+    "should_trigger": true
+  },
+  {
+    "query": "turn this profile.json into a compact json report I can feed another agent",
+    "should_trigger": true
+  },
+  {
+    "query": "what are the top leaf and inclusive functions in this samply profile",
+    "should_trigger": true
+  },
+  {
+    "query": "check whether this profile is mostly unsymbolicated garbage",
+    "should_trigger": true
+  },
+  {
+    "query": "give me a markdown hotspot summary from this firefox profiler export",
+    "should_trigger": true
+  },
+  {
+    "query": "extract dominant stacks and marker counts from this profile.json.gz",
+    "should_trigger": true
+  },
+  {
+    "query": "record a new samply profile for my test suite",
+    "should_trigger": false
+  },
+  {
+    "query": "compare baseline.profile.json.gz and candidate.profile.json.gz",
+    "should_trigger": false
+  },
+  {
+    "query": "what's the difference between leaf and inclusive samples conceptually",
+    "should_trigger": false
+  },
+  {
+    "query": "open profiler.firefox.com for me",
+    "should_trigger": false
+  },
+  {
+    "query": "write a parser for callgrind files",
+    "should_trigger": false
+  },
+  {
+    "query": "profile my app on windows with ETW",
+    "should_trigger": false
+  },
+  {
+    "query": "turn this perf.data into a samply profile",
+    "should_trigger": false
+  },
+  {
+    "query": "show me the source code for the hottest frame in my browser",
+    "should_trigger": false
+  }
+]

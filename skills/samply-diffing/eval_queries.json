@@ -1,0 +1,66 @@
+[
+  {
+    "query": "compare baseline.profile.json.gz and candidate.profile.json.gz from samply",
+    "should_trigger": true
+  },
+  {
+    "query": "did my optimization actually help, or did it just move work somewhere else in these two firefox profiles",
+    "should_trigger": true
+  },
+  {
+    "query": "give me a machine-readable before/after diff for these samply captures",
+    "should_trigger": true
+  },
+  {
+    "query": "rank the biggest regressions between two profile.json.gz files",
+    "should_trigger": true
+  },
+  {
+    "query": "normalize these two profilers by sample share and tell me what changed",
+    "should_trigger": true
+  },
+  {
+    "query": "which threads regressed most between the old and new samply runs",
+    "should_trigger": true
+  },
+  {
+    "query": "show leaf vs inclusive hotspot deltas for two Firefox processed profiles",
+    "should_trigger": true
+  },
+  {
+    "query": "validate whether the candidate build is faster using these before/after samply artifacts",
+    "should_trigger": true
+  },
+  {
+    "query": "summarize a single samply profile into top stacks",
+    "should_trigger": false
+  },
+  {
+    "query": "record a new profile for this benchmark",
+    "should_trigger": false
+  },
+  {
+    "query": "explain how sampling profilers work",
+    "should_trigger": false
+  },
+  {
+    "query": "convert profile.json.gz to callgrind",
+    "should_trigger": false
+  },
+  {
+    "query": "attach samply to pid 7777",
+    "should_trigger": false
+  },
+  {
+    "query": "open firefox profiler and inspect a regression visually",
+    "should_trigger": false
+  },
+  {
+    "query": "compare two callgrind outputs",
+    "should_trigger": false
+  },
+  {
+    "query": "is this stack trace slower than before based on logs",
+    "should_trigger": false
+  }
+]

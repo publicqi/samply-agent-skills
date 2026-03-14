@@ -1,0 +1,66 @@
+[
+  {
+    "query": "profile this cargo test run with samply and save something I can inspect later",
+    "should_trigger": true
+  },
+  {
+    "query": "record a flame graph for my benchmark with Firefox Profiler but don't open the browser",
+    "should_trigger": true
+  },
+  {
+    "query": "attach samply to pid 48211 and capture 30s of data",
+    "should_trigger": true
+  },
+  {
+    "query": "I have perf.data from a linux server, can you get it into samply?",
+    "should_trigger": true
+  },
+  {
+    "query": "profile this windows service and include system symbols",
+    "should_trigger": true
+  },
+  {
+    "query": "why does samply say operation not permitted on linux",
+    "should_trigger": true
+  },
+  {
+    "query": "can you set up a local profile artifact for before/after performance comparison",
+    "should_trigger": true
+  },
+  {
+    "query": "use Firefox Profiler on this Homebrew binary without a browser tab",
+    "should_trigger": true
+  },
+  {
+    "query": "summarize this existing profile.json.gz into top functions",
+    "should_trigger": false
+  },
+  {
+    "query": "compare these two samply profiles and tell me what regressed",
+    "should_trigger": false
+  },
+  {
+    "query": "write a rust benchmark harness with criterion",
+    "should_trigger": false
+  },
+  {
+    "query": "open this JSON file and pretty-print it",
+    "should_trigger": false
+  },
+  {
+    "query": "why is my Linux process using so much CPU",
+    "should_trigger": false
+  },
+  {
+    "query": "convert this SVG flame graph to PNG",
+    "should_trigger": false
+  },
+  {
+    "query": "generate a perfetto trace for this Android app",
+    "should_trigger": false
+  },
+  {
+    "query": "show me how Firefox Profiler's UI works",
+    "should_trigger": false
+  }
+]
