@@ -1,10 +1,6 @@
 ---
 name: samply-diffing
 description: Use this skill when the user wants to compare two samply or Firefox processed profiles from before/after a code change, benchmark run, test run, or configuration change. It normalizes by weighted sample share, matches logical threads across captures, and reports regressions and improvements for leaf hotspots, inclusive hotspots, and repeated stacks so the agent can judge whether an optimization worked or just moved work elsewhere.
-license: Apache-2.0
-metadata:
-  author: OpenAI
-  version: "1.0.0"
 ---
 
 # Goal

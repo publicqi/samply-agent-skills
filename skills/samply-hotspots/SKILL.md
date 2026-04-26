@@ -1,10 +1,6 @@
 ---
 name: samply-hotspots
 description: Use this skill when the user already has a samply or Firefox processed profile (`profile.json`, `profile.json.gz`, or similar) and wants machine-readable hotspots, stack summaries, ranked threads, marker counts, or actionable findings without manually reading Firefox Profiler. It converts the processed profile format into compact JSON or Markdown with leaf hotspots, inclusive hotspots, dominant stacks, symbol-coverage checks, and notes about low-sample or weak-symbol captures.
-license: Apache-2.0
-metadata:
-  author: OpenAI
-  version: "1.0.0"
 ---
 
 # Goal

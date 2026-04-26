@@ -1,10 +1,6 @@
 ---
 name: samply-recording
 description: Use this skill when the user wants to profile a command, benchmark, build, test, service, PID, perf.data file, or Android simpleperf capture with samply, even if they only say “profile it”, “record a flame graph”, “capture hotspots”, or “use Firefox Profiler”. It converts samply into a headless, agent-friendly workflow: preflight environment checks, symbol/debug-info setup, non-interactive --save-only recording, and OS-specific fixes for Linux perf permissions, macOS code signing, and Windows ETW/symbol servers.
-license: Apache-2.0
-metadata:
-  author: OpenAI
-  version: "1.0.0"
 ---
 
 # Goal
