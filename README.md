@@ -48,3 +48,8 @@ Copy one or more directories from `skills/` into the skills directory used by yo
 - The Python scripts use only the standard library.
 - `samply-recording` is designed to adapt to the installed `samply --help` output rather than assuming every flag exists.
 - The bundle was written against samply's current browser-first / Firefox-processed-profile workflow and recent 0.13.x feature set.
+
+## Maintenance tools
+
+- `tools/check_sync.py` — verify (or `--write`) that the duplicated `profile_common.py` and `merge_syms.py` copies are byte-identical across skills. Run before commit.
+- `tools/eval_runner.py` — score each skill's `eval_queries.json` against a Claude model. Set `ANTHROPIC_API_KEY` and run; pass `--dry-run` to validate eval/frontmatter shapes without calling the API. Useful when editing a skill description.
