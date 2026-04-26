@@ -28,6 +28,13 @@ Produce a local profile artifact that another agent or skill can analyze without
 
    Prefer launching a command over attaching to a PID when both are viable.
 
+   For long-running children (daemons, REPLs, event loops) use the wrapper instead — it handles `--save-only`, output naming, presymbolicate detection, and the SIGINT-on-child handoff that lets samply finalize:
+
+   ```bash
+   scripts/record_profile.py -o profile.json.gz --max-duration 30 -- ./your-server
+   scripts/record_profile.py --pid 12345 --max-duration 10
+   ```
+
 3. Use stable filenames that preserve comparison order: `baseline.profile.json.gz`, `candidate.profile.json.gz`, `build.profile.json.gz`.
 
 4. Preserve symbol quality before recording. The full per-platform recipe (Cargo profile for Rust, `dsymutil` + UUID verification for macOS, `--symbol-dir` and Windows symbol servers) lives in `references/RECORDING.md` — read it before the first capture on a new platform.
