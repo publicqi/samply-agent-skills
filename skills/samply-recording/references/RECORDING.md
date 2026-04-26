@@ -149,6 +149,31 @@ If available in the installed version, add:
   also match the samply command line — it kills samply alongside, and the
   in-progress profile is lost. Match a unique substring of the child argv,
   or kill by PID.
+- Never `kill -9 <child_pid>` (SIGKILL) or `pkill -KILL` the profiled
+  child. Samply has no chance to flush its mmap buffers and finalize the
+  profile, so the output file is left empty or truncated. Use SIGINT
+  (`kill -INT`) or SIGTERM (`kill -TERM`) — both let samply write the
+  profile cleanly. Reach for SIGKILL only after a graceful stop has
+  already failed and the child is wedged.
+
+## Bounded recording without the wrapper
+
+`scripts/record_profile.py --max-duration N` is the agent-friendly path,
+but the equivalent one-liner works too and is sometimes easier to type:
+
+```bash
+samply record --save-only -o profile.json.gz -- timeout --signal=TERM 90 ./binary
+```
+
+Here `timeout` (GNU coreutils) sends SIGTERM to the child binary after 90
+seconds. Samply sees the child exit normally, finalizes, and writes the
+profile. Use `--signal=INT` if your child catches SIGTERM and refuses to
+shut down — both signals are safe.
+
+The one-liner does **not** auto-add `--unstable-presymbolicate` and does
+**not** regenerate a stale macOS `.dSYM` — the wrapper does both. Reach
+for the one-liner for quick captures; reach for the wrapper when you
+expect to compare profiles or run on macOS without a fresh dSYM.
 
 ## Symbols via `--unstable-presymbolicate`
 
@@ -162,3 +187,23 @@ merged single-file profile (for tools that do not share the auto-merge):
 scripts/merge_syms.py profile.json.gz
 # writes profile.merged.json.gz
 ```
+
+`--unstable-presymbolicate` only resolves symbols the loader can already
+see. Stripped system libraries (libc, libstdc++, jemalloc when installed
+from a release tarball) still come back as `fun_<rva>` and the leaf
+falls into a `[GAP]` bucket even with the flag. To resolve those, install
+the matching debug-info package on the recording host:
+
+```bash
+# Debian/Ubuntu
+sudo apt install libc6-dbg                  # libc / glibc
+sudo apt install libstdc++6-dbg             # libstdc++
+sudo apt install libjemalloc-dev libjemalloc2-dbgsym
+
+# Fedora / RHEL
+sudo dnf debuginfo-install glibc libstdc++ jemalloc
+```
+
+If you cannot install -dbg packages on this machine, point samply at a
+local symbol cache with `--symbol-dir <dir>`; otherwise expect the leaf
+hotspot list to include unresolved system-library frames.

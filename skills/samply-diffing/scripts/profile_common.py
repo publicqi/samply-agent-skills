@@ -22,6 +22,12 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
 HEXISH_RE = re.compile(r"^(?:0x)?[0-9a-fA-F]{6,}$")
+# When the resource side is a bare integer index (e.g. `2!157`, `15!eef3b`),
+# the symbolicator failed at the resource level — at that point the symbol
+# piece is almost certainly an unresolved offset even if it is short. Only
+# trigger when the left side is purely digits to avoid flagging real symbol
+# names that happen to be hex-shaped (`lib!add`, `libc.so.6!free`).
+RESOURCE_INDEX_HEXISH_RE = re.compile(r"^\d+!(?:0x)?[0-9a-fA-F]{2,}$")
 UNKNOWN_NAMES = {
     "",
     "?",
@@ -169,6 +175,18 @@ def likely_unsymbolicated(name: Optional[str]) -> bool:
     stripped = name.strip()
     if stripped.lower() in UNKNOWN_NAMES:
         return True
+    # Catch `2!157` / `15!eef3b` style composite forms where the resource
+    # itself is unresolved (a bare integer index) — short hex symbol piece
+    # then strongly implies an unresolved offset.
+    if RESOURCE_INDEX_HEXISH_RE.fullmatch(stripped):
+        return True
+    # For `<libname>!<symbol>` forms, defer to the symbol piece. Without this,
+    # a stripped libc leaf shows up in the leaf list as `libc.so.6!eef3bd0`
+    # but gets miscounted as resolved because the resource side parses fine.
+    if "!" in stripped:
+        symbol = stripped.rsplit("!", 1)[1]
+        if symbol and symbol != stripped:
+            return likely_unsymbolicated(symbol)
     if HEXISH_RE.fullmatch(stripped):
         return True
     if stripped.startswith("0x") and len(stripped) >= 8:
@@ -409,7 +427,12 @@ def analyze_thread(
             },
         )
 
-        if not likely_unsymbolicated(leaf.get("name")):
+        # Check the display key, not just the bare name. The display key
+        # captures the resource prefix that future symbolicators may emit
+        # (e.g. "libc.so.6!eef3b") — without this, a leaf where the bare
+        # name is a hex address but the resource lookup happens to succeed
+        # would otherwise be miscounted as resolved.
+        if not likely_unsymbolicated(leaf_key):
             named_leaf_samples += weight
 
         seen_in_sample = set()
@@ -596,6 +619,97 @@ def _thread_matches(thread_key: Dict[str, Any], queries: List[str]) -> bool:
     return False
 
 
+def _normalize_family_queries(family_filters: Optional[List[str]]) -> List[Tuple[str, str]]:
+    """Normalize family substrings to (raw, lowercased) pairs, dropping empties."""
+    out: List[Tuple[str, str]] = []
+    for raw in family_filters or []:
+        stripped = raw.strip()
+        if not stripped:
+            continue
+        out.append((stripped, stripped.lower()))
+    return out
+
+
+def build_summary_family_rollups(
+    analysis: Dict[str, Any],
+    family_filters: Optional[List[str]],
+    *,
+    top_functions: int = 10,
+) -> List[Dict[str, Any]]:
+    """Aggregate worker-pool style threads (matched by name substring) into one row.
+
+    Real workloads often have N identically-named worker / encoder / IO threads
+    where the per-thread share looks small but the family combined dominates
+    the profile. Without an aggregate, agents end up summing percentages by
+    hand. Each rollup reports thread count, combined samples, leaf-symbol
+    coverage, and combined leaf / inclusive hotspots.
+    """
+    queries = _normalize_family_queries(family_filters)
+    if not queries:
+        return []
+
+    total_weighted = normalize_number(analysis.get("total_weighted_samples"), default=0.0)
+    threads = analysis.get("threads", [])
+
+    rollups: List[Dict[str, Any]] = []
+    for raw_query, q in queries:
+        matched: List[Dict[str, Any]] = []
+        for thread in threads:
+            key = thread.get("thread_key") or {}
+            haystacks = [
+                str(key.get("process_name") or "").lower(),
+                str(key.get("name") or "").lower(),
+            ]
+            if any(q in h for h in haystacks):
+                matched.append(thread)
+
+        weighted = 0.0
+        raw = 0
+        named = 0.0
+        leaf_counter: Counter = Counter()
+        inclusive_counter: Counter = Counter()
+        function_details: Dict[str, Dict[str, Any]] = {}
+        for thread in matched:
+            weighted += normalize_number(thread.get("weighted_samples"))
+            raw += int(thread.get("raw_samples") or 0)
+            named += normalize_number(thread.get("named_leaf_samples"))
+            leaf_counter.update(thread.get("leaf_counter") or Counter())
+            inclusive_counter.update(thread.get("inclusive_counter") or Counter())
+            for key, details in (thread.get("function_details") or {}).items():
+                function_details.setdefault(key, details)
+
+        def _relabel(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+            relabeled = []
+            for row in rows:
+                copy = dict(row)
+                if "pct_of_thread" in copy:
+                    copy["pct_of_family"] = copy.pop("pct_of_thread")
+                relabeled.append(copy)
+            return relabeled
+
+        rollups.append(
+            {
+                "family": raw_query,
+                "thread_count": len(matched),
+                "weighted_samples": round(weighted, 6),
+                "raw_samples": raw,
+                "pct_of_profile": format_pct(weighted, total_weighted),
+                "leaf_symbol_coverage_pct": format_pct(named, weighted),
+                "top_leaf_functions": _relabel(
+                    counter_items_to_public(
+                        leaf_counter, function_details, weighted, top_functions
+                    )
+                ),
+                "top_inclusive_functions": _relabel(
+                    counter_items_to_public(
+                        inclusive_counter, function_details, weighted, top_functions
+                    )
+                ),
+            }
+        )
+    return rollups
+
+
 def build_public_report(
     analysis: Dict[str, Any],
     source_path: str,
@@ -605,6 +719,7 @@ def build_public_report(
     top_stacks: int = 10,
     top_markers: int = 10,
     thread_filters: Optional[List[str]] = None,
+    family_filters: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     filters = [q for q in (thread_filters or []) if q.strip()]
     if filters:
@@ -667,6 +782,10 @@ def build_public_report(
             "Most top threads have poor leaf symbol coverage; fix symbols before making strong claims."
         )
 
+    family_rollups = build_summary_family_rollups(
+        analysis, family_filters, top_functions=top_functions
+    )
+
     return {
         "schema": {"name": "samply-hotspots-summary", "version": 1},
         "profile": {
@@ -683,6 +802,7 @@ def build_public_report(
             "weighted_samples": round(total_weighted, 6),
         },
         "threads": public_threads,
+        "family_rollups": family_rollups,
         "notes": profile_notes,
     }
 
@@ -707,6 +827,29 @@ def render_markdown(report: Dict[str, Any]) -> str:
     for note in report.get("notes", []):
         lines.append(f"> {note}")
     if report.get("notes"):
+        lines.append("")
+
+    for rollup in report.get("family_rollups") or []:
+        lines.append(f"## Family rollup: `{rollup['family']}`")
+        lines.append("")
+        lines.append(
+            f"- Threads matched: `{rollup['thread_count']}` "
+            f"(combined `{rollup['weighted_samples']}` weighted samples, "
+            f"`{rollup['pct_of_profile']}%` of profile)"
+        )
+        lines.append(
+            f"- Combined leaf symbol coverage: `{rollup['leaf_symbol_coverage_pct']}%`"
+        )
+        lines.append("")
+        lines.append("### Combined top leaf functions")
+        lines.append("")
+        for row in rollup.get("top_leaf_functions", []) or []:
+            lines.append(
+                f"- `{row['function']}` — {row['samples']} samples "
+                f"({row.get('pct_of_family', row.get('pct_of_thread', 0))}% of family)"
+            )
+        if not rollup.get("top_leaf_functions"):
+            lines.append("- None")
         lines.append("")
 
     for thread in report.get("threads", []):
@@ -785,6 +928,7 @@ def aggregate_threads_for_diff(analysis: Dict[str, Any]) -> Dict[str, Dict[str, 
                     "process_name": process_name or None,
                     "name": name,
                 },
+                "underlying_thread_count": 0,
                 "weighted_samples": 0.0,
                 "raw_samples": 0,
                 "named_leaf_samples": 0.0,
@@ -793,6 +937,7 @@ def aggregate_threads_for_diff(analysis: Dict[str, Any]) -> Dict[str, Dict[str, 
                 "stack_counter": Counter(),
             }
 
+        grouped[key]["underlying_thread_count"] += 1
         grouped[key]["weighted_samples"] += normalize_number(thread["weighted_samples"])
         grouped[key]["raw_samples"] += int(thread["raw_samples"])
         grouped[key]["named_leaf_samples"] += normalize_number(thread["named_leaf_samples"])
@@ -852,6 +997,88 @@ def _aggregated_thread_matches(payload: Dict[str, Any], queries: List[str]) -> b
     return _thread_matches(payload.get("thread") or {}, queries)
 
 
+def build_diff_family_rollups(
+    family_filters: Optional[List[str]],
+    base_grouped: Dict[str, Dict[str, Any]],
+    cand_grouped: Dict[str, Dict[str, Any]],
+    baseline_total: float,
+    candidate_total: float,
+    *,
+    top_functions: int = 10,
+) -> List[Dict[str, Any]]:
+    """Diff version of family rollups.
+
+    Aggregating worker-pool threads is especially important in diffs because
+    a regression that splits across N workers shows up as ~0.5 pts per
+    thread but as a clear combined delta when summed.
+    """
+    queries = _normalize_family_queries(family_filters)
+    if not queries:
+        return []
+
+    def select(grouped: Dict[str, Dict[str, Any]], q: str) -> List[Dict[str, Any]]:
+        return [
+            payload
+            for payload in grouped.values()
+            if _aggregated_thread_matches(payload, [q])
+        ]
+
+    rollups: List[Dict[str, Any]] = []
+    for raw_query, q in queries:
+        base_match = select(base_grouped, q)
+        cand_match = select(cand_grouped, q)
+
+        base_leaf: Counter = Counter()
+        base_inc: Counter = Counter()
+        cand_leaf: Counter = Counter()
+        cand_inc: Counter = Counter()
+        base_weighted = 0.0
+        cand_weighted = 0.0
+        # Each grouped payload may already collapse N identically-named raw
+        # threads — sum the underlying counts so the user sees "32 worker
+        # threads" rather than "1 collapsed entry".
+        base_underlying = 0
+        cand_underlying = 0
+        for payload in base_match:
+            base_leaf.update(payload.get("leaf_counter") or Counter())
+            base_inc.update(payload.get("inclusive_counter") or Counter())
+            base_weighted += normalize_number(payload.get("weighted_samples"))
+            base_underlying += int(payload.get("underlying_thread_count") or 1)
+        for payload in cand_match:
+            cand_leaf.update(payload.get("leaf_counter") or Counter())
+            cand_inc.update(payload.get("inclusive_counter") or Counter())
+            cand_weighted += normalize_number(payload.get("weighted_samples"))
+            cand_underlying += int(payload.get("underlying_thread_count") or 1)
+
+        leaf_regressions, leaf_improvements = diff_counter(
+            base_leaf, cand_leaf, base_weighted, cand_weighted, top=top_functions
+        )
+        inclusive_regressions, inclusive_improvements = diff_counter(
+            base_inc, cand_inc, base_weighted, cand_weighted, top=top_functions
+        )
+
+        baseline_pct = format_pct(base_weighted, baseline_total)
+        candidate_pct = format_pct(cand_weighted, candidate_total)
+
+        rollups.append(
+            {
+                "family": raw_query,
+                "baseline_thread_count": base_underlying,
+                "candidate_thread_count": cand_underlying,
+                "baseline_weighted_samples": round(base_weighted, 6),
+                "candidate_weighted_samples": round(cand_weighted, 6),
+                "baseline_pct_of_profile": baseline_pct,
+                "candidate_pct_of_profile": candidate_pct,
+                "delta_pct": round(candidate_pct - baseline_pct, 4),
+                "leaf_regressions": leaf_regressions,
+                "leaf_improvements": leaf_improvements,
+                "inclusive_regressions": inclusive_regressions,
+                "inclusive_improvements": inclusive_improvements,
+            }
+        )
+    return rollups
+
+
 def build_diff_report(
     baseline_analysis: Dict[str, Any],
     candidate_analysis: Dict[str, Any],
@@ -862,6 +1089,7 @@ def build_diff_report(
     top_functions: Optional[int] = None,
     top_stacks: Optional[int] = None,
     thread_filters: Optional[List[str]] = None,
+    family_filters: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     if top_functions is None:
         top_functions = top
@@ -994,6 +1222,15 @@ def build_diff_report(
             }
         )
 
+    family_rollups = build_diff_family_rollups(
+        family_filters,
+        base_grouped,
+        cand_grouped,
+        baseline_total,
+        candidate_total,
+        top_functions=top_functions,
+    )
+
     return {
         "schema": {"name": "samply-diff", "version": 1},
         "baseline": {
@@ -1018,6 +1255,7 @@ def build_diff_report(
             "stack_improvements": global_stack_improvements,
         },
         "threads": thread_rows,
+        "family_rollups": family_rollups,
         "notes": _build_diff_notes(thread_rows),
     }
 
@@ -1071,6 +1309,41 @@ def render_diff_markdown(report: Dict[str, Any]) -> str:
     if not report["global"].get("leaf_improvements"):
         lines.append("- None")
     lines.append("")
+
+    for rollup in report.get("family_rollups") or []:
+        lines.append(f"## Family rollup: `{rollup['family']}`")
+        lines.append("")
+        lines.append(
+            f"- Threads matched (baseline → candidate): "
+            f"`{rollup['baseline_thread_count']}` → `{rollup['candidate_thread_count']}`"
+        )
+        lines.append(
+            f"- Combined share of profile: "
+            f"`{rollup['baseline_pct_of_profile']}%` → "
+            f"`{rollup['candidate_pct_of_profile']}%` "
+            f"({rollup['delta_pct']} pts)"
+        )
+        lines.append("")
+        lines.append("### Combined leaf regressions")
+        lines.append("")
+        for row in rollup.get("leaf_regressions") or []:
+            lines.append(
+                f"- `{row['function']}`: {row['baseline_pct']}% → {row['candidate_pct']}% "
+                f"({row['delta_pct']} pts)"
+            )
+        if not rollup.get("leaf_regressions"):
+            lines.append("- None")
+        lines.append("")
+        lines.append("### Combined leaf improvements")
+        lines.append("")
+        for row in rollup.get("leaf_improvements") or []:
+            lines.append(
+                f"- `{row['function']}`: {row['baseline_pct']}% → {row['candidate_pct']}% "
+                f"({row['delta_pct']} pts)"
+            )
+        if not rollup.get("leaf_improvements"):
+            lines.append("- None")
+        lines.append("")
 
     for thread in report.get("threads", []):
         info = thread["thread"]

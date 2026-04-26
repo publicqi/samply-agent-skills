@@ -107,25 +107,46 @@ def linux_checks() -> List[Dict[str, Any]]:
     if paranoid is not None:
         try:
             value = int(paranoid)
-            status = "ok" if value <= 1 else "warn"
+            # Three tiers, because "warn" alone gets ignored by agents who
+            # then waste a recording on a profile full of `[unknown]` stacks:
+            #   <= 1  permits user-space sampling with kernel-side context
+            #   == 2  user-space-only (default on most distros; usually fine
+            #         for own processes but kernel symbols are restricted)
+            #   >= 3  blocks non-root user-space profiling outright
+            #         (Ubuntu 24.04 ships 4 by default)
+            if value <= 1:
+                status = "ok"
+                message = "Kernel perf permissions look compatible with user-space profiling."
+                suggestions: List[str] = []
+            elif value == 2:
+                status = "warn"
+                message = (
+                    "perf_event_paranoid=2 limits sampling to user-space events. "
+                    "Profiling your own processes works, but kernel/syscall frames "
+                    "will be missing."
+                )
+                suggestions = [
+                    "Lower it if you need kernel frames: sudo sysctl kernel.perf_event_paranoid=1",
+                ]
+            else:
+                status = "fail"
+                message = (
+                    f"perf_event_paranoid={value} blocks non-root user-space "
+                    "profiling. samply will record but stacks come back empty or "
+                    "unsymbolicated. This is the default on Ubuntu 24.04+."
+                )
+                suggestions = [
+                    "sudo sysctl kernel.perf_event_paranoid=1",
+                    "If that still blocks profiling on this host, try: sudo sysctl kernel.perf_event_paranoid=-1",
+                    "Persist across reboots: echo 'kernel.perf_event_paranoid=1' | sudo tee /etc/sysctl.d/99-perf.conf",
+                ]
             checks.append(
                 {
                     "name": "perf_event_paranoid",
                     "status": status,
                     "value": value,
-                    "message": (
-                        "Kernel perf permissions look compatible with user-space profiling."
-                        if status == "ok"
-                        else "Kernel perf permissions may block non-root profiling."
-                    ),
-                    "suggestions": (
-                        []
-                        if status == "ok"
-                        else [
-                            "sudo sysctl kernel.perf_event_paranoid=1",
-                            "If that still blocks profiling on this host, try: sudo sysctl kernel.perf_event_paranoid=-1",
-                        ]
-                    ),
+                    "message": message,
+                    "suggestions": suggestions,
                 }
             )
         except ValueError:
@@ -143,22 +164,31 @@ def linux_checks() -> List[Dict[str, Any]]:
     if mlock is not None:
         try:
             value = int(mlock)
-            status = "ok" if value >= 1024 else "warn"
+            if value >= 1024:
+                status = "ok"
+                message = "Perf mlock limit looks reasonable."
+                suggestions = []
+            elif value >= 512:
+                status = "warn"
+                message = (
+                    f"Perf mlock limit ({value} KB) is on the low side; "
+                    "sustained profiling can hit mmap/EPERM failures."
+                )
+                suggestions = ["sudo sysctl kernel.perf_event_mlock_kb=2048"]
+            else:
+                status = "fail"
+                message = (
+                    f"Perf mlock limit ({value} KB) is too low; samply will "
+                    "almost certainly hit mmap/EPERM and produce empty profiles."
+                )
+                suggestions = ["sudo sysctl kernel.perf_event_mlock_kb=2048"]
             checks.append(
                 {
                     "name": "perf_event_mlock_kb",
                     "status": status,
                     "value": value,
-                    "message": (
-                        "Perf mlock limit looks reasonable."
-                        if status == "ok"
-                        else "Low perf mlock limit can trigger mmap/EPERM failures during profiling."
-                    ),
-                    "suggestions": (
-                        []
-                        if status == "ok"
-                        else ["sudo sysctl kernel.perf_event_mlock_kb=2048"]
-                    ),
+                    "message": message,
+                    "suggestions": suggestions,
                 }
             )
         except ValueError:

@@ -16,6 +16,8 @@ Produce a local profile artifact that another agent or skill can analyze without
    scripts/check_env.py --mode all --binary ./target/profiling/your-binary
    ```
 
+   Treat any check with `"status": "fail"` as a blocker — apply its `suggestions` before recording. Recording with a failing preflight (for example, `perf_event_paranoid >= 3` on Ubuntu 24.04+) usually produces a profile with empty or `[unknown]` stacks, and the run has to be redone.
+
 2. Record to a file with `--save-only` and an explicit output path:
 
    ```bash

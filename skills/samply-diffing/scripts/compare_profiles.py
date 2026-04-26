@@ -60,6 +60,20 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--family",
+        action="append",
+        default=[],
+        metavar="SUBSTRING",
+        help=(
+            "Aggregate threads whose process_name or name contains SUBSTRING "
+            "into a single family rollup. Reports combined baseline / candidate "
+            "share, combined delta, and combined leaf / inclusive regressions and "
+            "improvements. Repeat for multiple families. Especially useful when "
+            "a regression spreads across N identically-named worker threads and "
+            "looks small per-thread."
+        ),
+    )
+    parser.add_argument(
         "--strict-coverage",
         action="store_true",
         help=(
@@ -93,6 +107,7 @@ def main() -> int:
             top_functions=args.top_functions,
             top_stacks=args.top_stacks,
             thread_filters=args.thread,
+            family_filters=args.family,
         )
     except FileNotFoundError as exc:
         print(f"Error: {exc}", file=sys.stderr)

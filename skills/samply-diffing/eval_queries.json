@@ -32,6 +32,14 @@
     "should_trigger": true
   },
   {
+    "query": "compare candidate3.profile.json.gz vs candidate4.profile.json.gz, focusing on the encoder threads",
+    "should_trigger": true
+  },
+  {
+    "query": "after my optimization the run looks faster but I want to see vs the prior baseline profile",
+    "should_trigger": true
+  },
+  {
     "query": "summarize a single samply profile into top stacks",
     "should_trigger": false
   },

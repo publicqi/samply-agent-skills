@@ -44,6 +44,11 @@ scripts/summarize_profile.py \
 # restrict to specific threads (case-insensitive substring vs process_name / name / tid; repeatable)
 scripts/summarize_profile.py --thread mininerv-cli --thread token-worker path/to/profile.json.gz
 
+# roll up worker pools: when N threads share a name (e.g. 32 worker / 8 encoder
+# threads), --family aggregates them into one "{family}: N threads, X% combined"
+# row with combined leaf / inclusive hotspots. Repeatable for multiple families.
+scripts/summarize_profile.py --family worker --family encoder path/to/profile.json.gz
+
 # fail fast in scripts when leaf coverage is too poor to trust rankings
 scripts/summarize_profile.py --strict-coverage path/to/profile.json.gz || echo "regenerate dSYM / re-record with --unstable-presymbolicate"
 ```
@@ -52,11 +57,15 @@ scripts/summarize_profile.py --strict-coverage path/to/profile.json.gz || echo "
 
 # Output contract
 
-The JSON report contains a `schema` field (`{"name": "samply-hotspots-summary", "version": 1}`) plus a global thread ranking, per-thread weighted sample totals, top leaf functions, top inclusive functions, top stacks, top markers, and symbol coverage notes. Pin against `schema.version` for downstream agents. The shape is deliberately much smaller and more stable than the raw Firefox processed profile.
+The JSON report contains a `schema` field (`{"name": "samply-hotspots-summary", "version": 1}`) plus a global thread ranking, per-thread weighted sample totals, top leaf functions, top inclusive functions, top stacks, top markers, symbol coverage notes, and (when `--family` is passed) a `family_rollups` array with combined-thread totals and combined hotspots. Pin against `schema.version` for downstream agents. The shape is deliberately much smaller and more stable than the raw Firefox processed profile.
 
 # When to stop and re-record
 
 Stop and improve the profile instead of analyzing further when symbol coverage is poor, almost all hotspots are raw addresses or `?`, the target thread barely has any samples, or the user needs off-CPU data from Linux.
+
+# Hand off to samply-diffing for two-profile questions
+
+If the user is asking whether one capture is faster/slower than another (candidate vs baseline, after-the-fix vs before, with-flag vs without-flag), do not try to eyeball it from two `summarize_profile.py` runs. Hand off to the samply-diffing skill — its share-of-samples normalization handles unequal run lengths and produces structured regression / improvement rows that this single-profile summary cannot.
 
 # Reference
 

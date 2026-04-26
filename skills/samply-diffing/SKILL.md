@@ -1,6 +1,6 @@
 ---
 name: samply-diffing
-description: Use this skill when the user wants to compare two samply or Firefox processed profiles from before/after a code change, benchmark run, test run, or configuration change. It normalizes by weighted sample share, matches logical threads across captures, and reports regressions and improvements for leaf hotspots, inclusive hotspots, and repeated stacks so the agent can judge whether an optimization worked or just moved work elsewhere.
+description: Use this skill when the user wants to compare two samply or Firefox processed profiles from before/after a code change, benchmark run, test run, or configuration change. It normalizes by weighted sample share, matches logical threads across captures, and reports regressions and improvements for leaf hotspots, inclusive hotspots, and repeated stacks so the agent can judge whether an optimization worked or just moved work elsewhere. Trigger eagerly on phrasings like "compare candidate vs baseline", "did my optimization help", "after my change vs before", "diff these two profiles", "is this build faster", or "did the regression come from my patch" — anywhere the user is reasoning over two captures rather than one.
 ---
 
 # Goal
@@ -25,6 +25,11 @@ scripts/compare_profiles.py --top-functions 20 --top-stacks 8 baseline.profile.j
 # restrict to specific threads (case-insensitive substring vs process_name / name; repeatable)
 scripts/compare_profiles.py --thread mininerv-cli baseline.profile.json.gz candidate.profile.json.gz
 
+# roll up worker pools: a regression spread across 32 worker threads looks
+# like ~0.5 pts per thread; --family sums the deltas so the combined drift is
+# obvious. Repeat for multiple families.
+scripts/compare_profiles.py --family worker --family encoder baseline.profile.json.gz candidate.profile.json.gz
+
 # fail fast in scripts when coverage is too poor on both sides to trust the diff
 scripts/compare_profiles.py --strict-coverage baseline.profile.json.gz candidate.profile.json.gz \
   || echo "regenerate dSYM / re-record with --unstable-presymbolicate"
@@ -42,7 +47,7 @@ scripts/compare_profiles.py --strict-coverage baseline.profile.json.gz candidate
 
 # What the script reports
 
-A `schema` field (`{"name": "samply-diff", "version": 1}`) plus baseline and candidate sample totals; global regressions and improvements; per-thread regressions and improvements; separate sections for leaf functions, inclusive functions, and full stacks. Pin against `schema.version` for downstream agents.
+A `schema` field (`{"name": "samply-diff", "version": 1}`) plus baseline and candidate sample totals; global regressions and improvements; per-thread regressions and improvements; separate sections for leaf functions, inclusive functions, and full stacks; and (when `--family` is passed) a `family_rollups` array reporting combined deltas and combined regressions / improvements across N identically-named worker threads. Pin against `schema.version` for downstream agents.
 
 # Interpreting deltas
 
