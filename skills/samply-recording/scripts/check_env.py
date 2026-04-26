@@ -126,7 +126,87 @@ def linux_checks() -> List[Dict[str, Any]]:
     return checks
 
 
-def macos_checks(samply_path: Optional[str]) -> List[Dict[str, Any]]:
+_DWARFDUMP_UUID_RE = re.compile(r"UUID:\s*([0-9A-Fa-f-]+)")
+
+
+def _read_uuid(path: str) -> Optional[str]:
+    if not shutil.which("dwarfdump"):
+        return None
+    result = run(["dwarfdump", "--uuid", path])
+    if result["returncode"] != 0:
+        return None
+    match = _DWARFDUMP_UUID_RE.search(result["stdout"] or "")
+    return match.group(1).upper() if match else None
+
+
+def macos_dsym_checks(binary: str) -> List[Dict[str, Any]]:
+    checks: List[Dict[str, Any]] = []
+
+    if not os.path.exists(binary):
+        checks.append(
+            {
+                "name": "binary_path",
+                "status": "warn",
+                "value": binary,
+                "message": "Binary not found at the given path; skipping dSYM checks.",
+                "suggestions": [
+                    "Build the binary first, e.g. `cargo build --profile profiling`.",
+                ],
+            }
+        )
+        return checks
+
+    dsym_path = binary + ".dSYM"
+    dsym_exists = os.path.isdir(dsym_path)
+    checks.append(
+        {
+            "name": "dsym_present",
+            "status": "ok" if dsym_exists else "warn",
+            "value": dsym_path,
+            "message": (
+                f"dSYM bundle found next to binary: {dsym_path}"
+                if dsym_exists
+                else "macOS Rust release builds do not auto-generate a .dSYM. "
+                "Without it, samply leaf coverage is often <40% and inline frames are missing."
+            ),
+            "suggestions": (
+                []
+                if dsym_exists
+                else [f"Run: dsymutil {binary}"]
+            ),
+        }
+    )
+
+    if dsym_exists:
+        binary_uuid = _read_uuid(binary)
+        dsym_uuid = _read_uuid(dsym_path)
+        if binary_uuid and dsym_uuid:
+            match = binary_uuid == dsym_uuid
+            checks.append(
+                {
+                    "name": "dsym_uuid_match",
+                    "status": "ok" if match else "warn",
+                    "value": {"binary": binary_uuid, "dsym": dsym_uuid},
+                    "message": (
+                        "Binary and dSYM UUIDs match."
+                        if match
+                        else "dSYM is stale; UUIDs differ from the binary. "
+                        "Symbolication will be silently wrong."
+                    ),
+                    "suggestions": (
+                        []
+                        if match
+                        else [
+                            f"Regenerate: rm -rf {dsym_path} && dsymutil {binary}",
+                        ]
+                    ),
+                }
+            )
+
+    return checks
+
+
+def macos_checks(samply_path: Optional[str], binary: Optional[str] = None) -> List[Dict[str, Any]]:
     checks: List[Dict[str, Any]] = []
     if samply_path and shutil.which("codesign"):
         result = run(["codesign", "-dv", samply_path])
@@ -147,6 +227,29 @@ def macos_checks(samply_path: Optional[str]) -> List[Dict[str, Any]]:
             }
         )
 
+    dsymutil_path = shutil.which("dsymutil")
+    checks.append(
+        {
+            "name": "dsymutil_available",
+            "status": "ok" if dsymutil_path else "warn",
+            "value": dsymutil_path,
+            "message": (
+                "dsymutil is on PATH; you can generate .dSYM bundles for Rust/C++ binaries."
+                if dsymutil_path
+                else "dsymutil not found on PATH. Without it samply will only see "
+                "raw addresses for binaries that do not ship inline DWARF."
+            ),
+            "suggestions": (
+                []
+                if dsymutil_path
+                else [
+                    "Install Xcode Command Line Tools: `xcode-select --install`",
+                    "Or `brew install llvm` (provides dsymutil under the llvm prefix).",
+                ]
+            ),
+        }
+    )
+
     checks.append(
         {
             "name": "system_binary_limitation",
@@ -161,6 +264,10 @@ def macos_checks(samply_path: Optional[str]) -> List[Dict[str, Any]]:
             ],
         }
     )
+
+    if binary:
+        checks.extend(macos_dsym_checks(binary))
+
     return checks
 
 
@@ -266,6 +373,15 @@ def parse_args() -> argparse.Namespace:
         help="Intended workflow. Affects some suggestions. Default: all",
     )
     parser.add_argument(
+        "--binary",
+        default=None,
+        help=(
+            "Optional path to the binary you plan to profile. On macOS this "
+            "enables dSYM presence and UUID-match checks (binary vs "
+            "binary.dSYM)."
+        ),
+    )
+    parser.add_argument(
         "--indent",
         type=int,
         default=2,
@@ -319,7 +435,7 @@ def main() -> int:
     if system_name == "Linux":
         result["checks"].extend(linux_checks())
     elif system_name == "Darwin":
-        result["checks"].extend(macos_checks(samply_path))
+        result["checks"].extend(macos_checks(samply_path, args.binary))
     elif system_name == "Windows":
         result["checks"].extend(windows_checks())
 

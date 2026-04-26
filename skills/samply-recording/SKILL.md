@@ -13,10 +13,13 @@ Produce a local profile artifact that another agent or skill can analyze without
 
 # Default procedure
 
-1. Run the preflight checker first.
+1. Run the preflight checker first. On macOS, pass the binary you intend to
+   profile so the checker also verifies that a `.dSYM` bundle exists next to
+   the binary and that its UUID matches:
 
 ```bash
 scripts/check_env.py --mode all
+scripts/check_env.py --mode all --binary ./target/profiling/your-binary  # macOS dSYM checks
 ```
 
 2. Prefer recording to a file with `--save-only` and an explicit output path, for example:

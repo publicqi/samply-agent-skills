@@ -50,6 +50,26 @@ def parse_args() -> argparse.Namespace:
         help="Maximum number of marker names per thread. Default: 10",
     )
     parser.add_argument(
+        "--thread",
+        action="append",
+        default=[],
+        metavar="QUERY",
+        help=(
+            "Restrict to threads whose process_name, name, or tid contains "
+            "QUERY (case-insensitive substring). Repeat to keep multiple "
+            "threads. When set, --top-threads is ignored."
+        ),
+    )
+    parser.add_argument(
+        "--strict-coverage",
+        action="store_true",
+        help=(
+            "Exit non-zero (3) when leaf symbol coverage is poor across the "
+            "returned threads. Useful to fail fast in scripts before relying "
+            "on rankings."
+        ),
+    )
+    parser.add_argument(
         "--indent",
         type=int,
         default=2,
@@ -70,6 +90,7 @@ def main() -> int:
             top_functions=args.top_functions,
             top_stacks=args.top_stacks,
             top_markers=args.top_markers,
+            thread_filters=args.thread,
         )
     except FileNotFoundError as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -92,6 +113,21 @@ def main() -> int:
         sys.stdout.write("\n")
     else:
         sys.stdout.write(render_markdown(report))
+
+    poor_coverage = any(
+        "poor leaf symbol coverage" in note.lower()
+        for note in report.get("notes", [])
+    )
+    if poor_coverage:
+        print(
+            "WARNING: leaf symbol coverage is poor across the returned threads. "
+            "Hotspot rankings may be misleading. Regenerate the .dSYM, run "
+            "samply with --unstable-presymbolicate, or add --symbol-dir before "
+            "drawing conclusions.",
+            file=sys.stderr,
+        )
+        if args.strict_coverage:
+            return 3
     return 0
 
 

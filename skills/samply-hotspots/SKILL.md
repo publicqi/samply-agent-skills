@@ -54,6 +54,22 @@ Use the report in this order:
 scripts/summarize_profile.py   --top-threads 12   --top-functions 15   --top-stacks 10   --top-markers 10   path/to/profile.json.gz
 ```
 
+To restrict the report to specific threads (case-insensitive substring match
+against process name, thread name, or tid; repeatable):
+
+```bash
+scripts/summarize_profile.py --thread mininerv-cli --thread token-worker path/to/profile.json.gz
+```
+
+To fail fast in scripts when the captured profile cannot support real
+hotspot conclusions (i.e. leaf symbol coverage is poor across the returned
+threads), pass `--strict-coverage`. The summarizer then prints a stderr
+banner and exits with status 3 instead of 0:
+
+```bash
+scripts/summarize_profile.py --strict-coverage path/to/profile.json.gz || echo "regenerate dSYM / re-record with --unstable-presymbolicate"
+```
+
 # Output contract
 
 The JSON report contains:
