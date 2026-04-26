@@ -15,8 +15,8 @@ import gzip
 import io
 import json
 import math
-import os
 import re
+import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
@@ -59,7 +59,7 @@ def _try_auto_merge_sidecar(profile: Dict[str, Any], profile_path: Path) -> None
 
 def load_profile(path: str) -> Dict[str, Any]:
     if path == "-":
-        raw = os.read(0, 1 << 30)
+        raw = sys.stdin.buffer.read()
         return _decode_profile_bytes(raw, raw[:2] == b"\x1f\x8b")
 
     p = Path(path)
