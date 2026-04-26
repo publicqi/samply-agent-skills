@@ -564,6 +564,38 @@ def markers_to_public(counter: Counter, limit: int) -> List[Dict[str, Any]]:
     return rows
 
 
+def _thread_id_label(thread_key: Dict[str, Any]) -> str:
+    process_name = str(thread_key.get("process_name") or "").strip()
+    name = str(thread_key.get("name") or "").strip()
+    tid = thread_key.get("tid")
+    label_parts = []
+    if process_name:
+        label_parts.append(process_name)
+    if name:
+        label_parts.append(name)
+    label = "/".join(label_parts) if label_parts else "<unnamed>"
+    if tid not in (None, ""):
+        label = f"{label}#{tid}"
+    return label
+
+
+def _thread_matches(thread_key: Dict[str, Any], queries: List[str]) -> bool:
+    if not queries:
+        return True
+    haystacks = [
+        str(thread_key.get("process_name") or "").lower(),
+        str(thread_key.get("name") or "").lower(),
+        str(thread_key.get("tid") or "").lower(),
+    ]
+    for query in queries:
+        q = query.strip().lower()
+        if not q:
+            continue
+        if any(q in h for h in haystacks):
+            return True
+    return False
+
+
 def build_public_report(
     analysis: Dict[str, Any],
     source_path: str,
@@ -572,8 +604,16 @@ def build_public_report(
     top_functions: int = 15,
     top_stacks: int = 10,
     top_markers: int = 10,
+    thread_filters: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    threads = analysis["threads"][: max(top_threads, 0)]
+    filters = [q for q in (thread_filters or []) if q.strip()]
+    if filters:
+        threads = [
+            t for t in analysis["threads"]
+            if _thread_matches(t["thread_key"], filters)
+        ]
+    else:
+        threads = analysis["threads"][: max(top_threads, 0)]
     omitted_threads = max(0, len(analysis["threads"]) - len(threads))
     total_weighted = normalize_number(analysis["total_weighted_samples"], default=0.0)
 
@@ -588,6 +628,7 @@ def build_public_report(
                     "tid": thread["thread_key"].get("tid"),
                     "pid": thread["thread_key"].get("pid"),
                 },
+                "thread_id_label": _thread_id_label(thread["thread_key"]),
                 "weighted_samples": round(denom, 6),
                 "raw_samples": int(thread["raw_samples"]),
                 "pct_of_profile": format_pct(denom, total_weighted),
@@ -669,9 +710,7 @@ def render_markdown(report: Dict[str, Any]) -> str:
 
     for thread in report.get("threads", []):
         info = thread["thread"]
-        thread_title = info.get("name") or "<unnamed-thread>"
-        if info.get("process_name"):
-            thread_title = f"{info['process_name']} / {thread_title}"
+        thread_title = thread.get("thread_id_label") or info.get("name") or "<unnamed-thread>"
 
         lines.append(f"## {thread_title}")
         lines.append("")

@@ -159,6 +159,6 @@ time, so you usually do not need to merge it yourself. If you need a
 merged single-file profile (for tools that do not share the auto-merge):
 
 ```bash
-../samply-hotspots/scripts/merge_syms.py profile.json.gz
+scripts/merge_syms.py profile.json.gz
 # writes profile.merged.json.gz
 ```

@@ -81,7 +81,7 @@ load the profile. If you ever need a one-shot merged profile (for tools
 that do not share the auto-merge), run:
 
 ```bash
-../samply-hotspots/scripts/merge_syms.py profile.json.gz
+scripts/merge_syms.py profile.json.gz
 # writes profile.merged.json.gz
 ```
 
