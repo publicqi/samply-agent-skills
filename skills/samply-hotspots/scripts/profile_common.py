@@ -668,6 +668,7 @@ def build_public_report(
         )
 
     return {
+        "schema": {"name": "samply-hotspots-summary", "version": 1},
         "profile": {
             "source": source_path,
             "product": analysis["meta"].get("product"),
@@ -994,6 +995,7 @@ def build_diff_report(
         )
 
     return {
+        "schema": {"name": "samply-diff", "version": 1},
         "baseline": {
             "source": baseline_source,
             "product": baseline_analysis["meta"].get("product"),

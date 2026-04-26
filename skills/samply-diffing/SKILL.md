@@ -46,7 +46,7 @@ scripts/compare_profiles.py --strict-coverage baseline.profile.json.gz candidate
 
 # What the script reports
 
-Baseline and candidate sample totals; global regressions and improvements; per-thread regressions and improvements; separate sections for leaf functions, inclusive functions, and full stacks.
+A `schema` field (`{"name": "samply-diff", "version": 1}`) plus baseline and candidate sample totals; global regressions and improvements; per-thread regressions and improvements; separate sections for leaf functions, inclusive functions, and full stacks. Pin against `schema.version` for downstream agents.
 
 # Interpreting deltas
 

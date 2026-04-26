@@ -56,7 +56,7 @@ scripts/summarize_profile.py --strict-coverage path/to/profile.json.gz || echo "
 
 # Output contract
 
-The JSON report contains a global thread ranking, per-thread weighted sample totals, top leaf functions, top inclusive functions, top stacks, top markers, and symbol coverage notes. It is deliberately much smaller and more stable than the raw Firefox processed profile.
+The JSON report contains a `schema` field (`{"name": "samply-hotspots-summary", "version": 1}`) plus a global thread ranking, per-thread weighted sample totals, top leaf functions, top inclusive functions, top stacks, top markers, and symbol coverage notes. Pin against `schema.version` for downstream agents. The shape is deliberately much smaller and more stable than the raw Firefox processed profile.
 
 # When to stop and re-record
 
