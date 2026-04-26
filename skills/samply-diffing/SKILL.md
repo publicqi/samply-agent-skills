@@ -15,48 +15,31 @@ Compare two saved profiles in a way that is robust to different run lengths and 
 
 ```bash
 scripts/compare_profiles.py baseline.profile.json.gz candidate.profile.json.gz > diff.json
-```
 
-For a readable summary:
-
-```bash
+# human-readable variant
 scripts/compare_profiles.py --format markdown baseline.profile.json.gz candidate.profile.json.gz
 ```
 
 # Comparison discipline
 
-- Compare **percent share of weighted samples**, not raw sample counts.
+- Compare **percent share of weighted samples**, not raw counts.
 - Read **leaf**, **inclusive**, and **stack** deltas together. A change may simply move cost from one leaf frame to another.
 - Prefer comparisons from similar workloads, inputs, and build settings.
 - Treat weak symbol coverage as a data-quality problem before treating it as a regression.
-- If thread names are duplicated across processes, include the process name in your conclusions.
+- Include the process name in conclusions when thread names repeat across processes.
 
 # What the script reports
 
-The diff includes:
-
-- baseline and candidate sample totals
-- global regressions and improvements
-- per-thread regressions and improvements
-- separate sections for leaf functions, inclusive functions, and full stacks
+Baseline and candidate sample totals; global regressions and improvements; per-thread regressions and improvements; separate sections for leaf functions, inclusive functions, and full stacks.
 
 # Interpreting deltas
 
-A positive delta means the candidate consumed a larger share of samples than the baseline. That is usually a regression for CPU cost.
-
-A negative delta means the candidate consumed a smaller share. That is usually an improvement, but verify that work did not simply move into another function or thread.
+A positive delta means the candidate consumed a larger share of samples than the baseline (usually a regression for CPU cost). A negative delta means a smaller share (usually an improvement, but verify that work did not just move into another function or thread).
 
 # Reliability checks
 
-Be cautious when:
-
-- the two runs exercised different code paths
-- either profile has very few samples
-- symbols differ substantially between runs
-- one profile was recorded with thread filters and the other was not
+Be cautious when the two runs exercised different code paths, either profile has very few samples, symbols differ substantially between runs, or one profile was recorded with thread filters and the other was not.
 
 # Reference
 
-For normalization details and thread matching assumptions, read:
-
-- `references/DIFFING.md`
+For normalization details and thread matching assumptions, read `references/DIFFING.md`.

@@ -15,86 +15,53 @@ Turn a saved samply profile into a compact report that an agent can reason over 
 
 ```bash
 scripts/summarize_profile.py path/to/profile.json.gz > summary.json
-```
 
-For a human-readable report:
-
-```bash
+# human-readable variant
 scripts/summarize_profile.py --format markdown path/to/profile.json.gz
 ```
 
-If the profile was recorded with `samply record --unstable-presymbolicate`,
-the resolved symbols live in a sidecar file (`<profile>.syms.json`) next
-to the profile. `summarize_profile.py` auto-merges that sidecar at load
-time, so you do not need to run a separate merge step. To produce a
-merged single-file profile for other tools, use
-`scripts/merge_syms.py <profile.json.gz>`.
+If the profile was recorded with `--unstable-presymbolicate`, the resolved symbols live in a sibling `<profile>.syms.json` sidecar; the summarizer auto-merges it at load time. To produce a one-shot merged profile for tools that do not share the auto-merge, run `scripts/merge_syms.py <profile.json.gz>`.
 
 # How to interpret the output
 
-Use the report in this order:
-
 1. **Thread ranking** — find where the samples concentrate.
 2. **Leaf hotspots** — what was sampled at the tip of the stack.
-3. **Inclusive hotspots** — what code dominates full stacks, even when not the leaf.
-4. **Top stacks** — repeated stack shapes often reveal phase-specific work or lock contention paths.
+3. **Inclusive hotspots** — what code dominates full stacks even when not the leaf.
+4. **Top stacks** — repeated stack shapes often reveal phase-specific work or lock contention.
 5. **Markers** — useful when the profile contains phase or task markers.
 
 # Required discipline
 
 - Prefer JSON for downstream machine consumption.
-- Do not over-interpret tiny profiles. The script emits notes when sample counts are very low.
-- Check `leaf_symbol_coverage_pct`. If symbol coverage is poor, fix recording or symbols before drawing conclusions.
+- Check `leaf_symbol_coverage_pct`. If coverage is poor, fix recording or symbols before drawing conclusions.
 - Treat unsymbolicated hex addresses and `?` frames as recording quality problems, not performance findings.
-- Use thread names plus process names when describing hotspots; many profiles contain repeated thread names across processes.
+- Use thread names plus process names; many profiles repeat thread names across processes.
+- Do not over-interpret tiny profiles. The script emits notes when sample counts are low.
 
 # Useful flags
 
 ```bash
-scripts/summarize_profile.py   --top-threads 12   --top-functions 15   --top-stacks 10   --top-markers 10   path/to/profile.json.gz
-```
+scripts/summarize_profile.py \
+  --top-threads 12 --top-functions 15 --top-stacks 10 --top-markers 10 \
+  path/to/profile.json.gz
 
-To restrict the report to specific threads (case-insensitive substring match
-against process name, thread name, or tid; repeatable):
-
-```bash
+# restrict to specific threads (case-insensitive substring vs process_name / name / tid; repeatable)
 scripts/summarize_profile.py --thread mininerv-cli --thread token-worker path/to/profile.json.gz
-```
 
-To fail fast in scripts when the captured profile cannot support real
-hotspot conclusions (i.e. leaf symbol coverage is poor across the returned
-threads), pass `--strict-coverage`. The summarizer then prints a stderr
-banner and exits with status 3 instead of 0:
-
-```bash
+# fail fast in scripts when leaf coverage is too poor to trust rankings
 scripts/summarize_profile.py --strict-coverage path/to/profile.json.gz || echo "regenerate dSYM / re-record with --unstable-presymbolicate"
 ```
 
+`--strict-coverage` exits 3 (instead of 0) and prints a stderr banner.
+
 # Output contract
 
-The JSON report contains:
-
-- global thread ranking
-- per-thread weighted sample totals
-- top leaf functions
-- top inclusive functions
-- top stacks
-- top markers
-- symbol coverage and notes
-
-This is deliberately much smaller and more stable than the raw Firefox processed profile.
+The JSON report contains a global thread ranking, per-thread weighted sample totals, top leaf functions, top inclusive functions, top stacks, top markers, and symbol coverage notes. It is deliberately much smaller and more stable than the raw Firefox processed profile.
 
 # When to stop and re-record
 
-Stop and improve the profile instead of analyzing further when:
-
-- symbol coverage is poor
-- almost all hotspots are raw addresses or `?`
-- the target thread barely has any samples
-- the user needs off-CPU data from Linux
+Stop and improve the profile instead of analyzing further when symbol coverage is poor, almost all hotspots are raw addresses or `?`, the target thread barely has any samples, or the user needs off-CPU data from Linux.
 
 # Reference
 
-If the parser needs maintenance or the raw profile structure matters, read:
-
-- `references/PROFILE-FORMAT.md`
+If the parser needs maintenance or the raw profile structure matters, read `references/PROFILE-FORMAT.md`.
