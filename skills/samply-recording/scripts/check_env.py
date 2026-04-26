@@ -15,6 +15,9 @@ from typing import Any, Dict, List, Optional
 
 FLAG_RE = re.compile(r"(?<![\w-])(--[a-zA-Z0-9][a-zA-Z0-9-]*)")
 SHORT_FLAG_RE = re.compile(r"(?<![\w-])(-[A-Za-z])(?![\w-])")
+VERSION_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)")
+
+MIN_SAMPLY_VERSION: tuple[int, int, int] = (0, 13, 0)
 
 
 def run(cmd: List[str]) -> Dict[str, Any]:
@@ -35,6 +38,52 @@ def run(cmd: List[str]) -> Dict[str, Any]:
         "returncode": proc.returncode,
         "stdout": proc.stdout,
         "stderr": proc.stderr,
+    }
+
+
+def parse_samply_version(version_text: str) -> Optional[tuple[int, int, int]]:
+    """Pull a semver triple out of `samply --version` output.
+
+    Tolerates both `samply 0.13.1` and bare `0.13.1`; returns None if no
+    triple can be found (e.g. unexpected stub or build metadata only).
+    """
+    match = VERSION_RE.search(version_text or "")
+    if not match:
+        return None
+    return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+
+
+def version_check(version_text: str) -> Dict[str, Any]:
+    parsed = parse_samply_version(version_text)
+    if parsed is None:
+        return {
+            "name": "samply_version",
+            "status": "warn",
+            "value": version_text,
+            "message": (
+                "Could not parse samply version; the bundle assumes "
+                f"samply >= {'.'.join(str(v) for v in MIN_SAMPLY_VERSION)}."
+            ),
+            "suggestions": ["Upgrade samply: cargo install samply --locked"],
+        }
+    status = "ok" if parsed >= MIN_SAMPLY_VERSION else "fail"
+    pretty = ".".join(str(v) for v in parsed)
+    minimum = ".".join(str(v) for v in MIN_SAMPLY_VERSION)
+    return {
+        "name": "samply_version",
+        "status": status,
+        "value": pretty,
+        "message": (
+            f"samply {pretty} satisfies the >= {minimum} minimum."
+            if status == "ok"
+            else f"samply {pretty} is older than the >= {minimum} minimum; "
+            "expect missing flags such as --unstable-presymbolicate."
+        ),
+        "suggestions": (
+            []
+            if status == "ok"
+            else ["Upgrade samply: cargo install samply --locked"]
+        ),
     }
 
 
@@ -418,7 +467,13 @@ def main() -> int:
         return 0
 
     version = run(["samply", "--version"])
-    result["samply"]["version_stdout"] = version["stdout"].strip() or version["stderr"].strip()
+    version_text = version["stdout"].strip() or version["stderr"].strip()
+    result["samply"]["version_stdout"] = version_text
+    parsed_version = parse_samply_version(version_text)
+    result["samply"]["version_parsed"] = (
+        ".".join(str(v) for v in parsed_version) if parsed_version else None
+    )
+    result["checks"].append(version_check(version_text))
 
     record_help = run(["samply", "record", "--help"])
     import_help = run(["samply", "import", "--help"])
