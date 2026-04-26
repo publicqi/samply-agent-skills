@@ -23,6 +23,13 @@ For a human-readable report:
 scripts/summarize_profile.py --format markdown path/to/profile.json.gz
 ```
 
+If the profile was recorded with `samply record --unstable-presymbolicate`,
+the resolved symbols live in a sidecar file (`<profile>.syms.json`) next
+to the profile. `summarize_profile.py` auto-merges that sidecar at load
+time, so you do not need to run a separate merge step. To produce a
+merged single-file profile for other tools, use
+`scripts/merge_syms.py <profile.json.gz>`.
+
 # How to interpret the output
 
 Use the report in this order:

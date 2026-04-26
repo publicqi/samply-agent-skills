@@ -31,12 +31,36 @@ UNKNOWN_NAMES = {
 }
 
 
+def _decode_profile_bytes(raw: bytes, is_gz: bool) -> Dict[str, Any]:
+    if is_gz:
+        return json.loads(gzip.decompress(raw).decode("utf-8"))
+    return json.loads(raw.decode("utf-8"))
+
+
+def _try_auto_merge_sidecar(profile: Dict[str, Any], profile_path: Path) -> None:
+    """Auto-merge a sibling samply `--unstable-presymbolicate` sidecar.
+
+    Side-effect only; failures are silent so this stays a strict optimization.
+    """
+    try:
+        from merge_syms import discover_sidecar, merge_syms_into  # type: ignore
+    except Exception:
+        return
+    sidecar_path = discover_sidecar(profile_path)
+    if sidecar_path is None:
+        return
+    try:
+        with sidecar_path.open("rb") as f:
+            sidecar = json.loads(f.read().decode("utf-8"))
+        merge_syms_into(profile, sidecar)
+    except Exception:
+        pass
+
+
 def load_profile(path: str) -> Dict[str, Any]:
     if path == "-":
         raw = os.read(0, 1 << 30)
-        if raw[:2] == b"\x1f\x8b":
-            return json.loads(gzip.decompress(raw).decode("utf-8"))
-        return json.loads(raw.decode("utf-8"))
+        return _decode_profile_bytes(raw, raw[:2] == b"\x1f\x8b")
 
     p = Path(path)
     if not p.exists():
@@ -45,9 +69,9 @@ def load_profile(path: str) -> Dict[str, Any]:
     with p.open("rb") as f:
         raw = f.read()
 
-    if raw[:2] == b"\x1f\x8b" or p.suffix == ".gz":
-        return json.loads(gzip.decompress(raw).decode("utf-8"))
-    return json.loads(raw.decode("utf-8"))
+    profile = _decode_profile_bytes(raw, raw[:2] == b"\x1f\x8b" or p.suffix == ".gz")
+    _try_auto_merge_sidecar(profile, p)
+    return profile
 
 
 def get_meta(profile: Dict[str, Any]) -> Dict[str, Any]:
@@ -297,7 +321,7 @@ def analyze_thread(
     process_node: Dict[str, Any],
     profile_meta: Dict[str, Any],
 ) -> Dict[str, Any]:
-    string_table = list(thread.get("stringTable") or [])
+    string_table = list(thread.get("stringArray") or thread.get("stringTable") or [])
     frame_table = normalize_table(thread.get("frameTable") or {})
     func_table = normalize_table(thread.get("funcTable") or {})
     stack_table = normalize_table(thread.get("stackTable") or {})

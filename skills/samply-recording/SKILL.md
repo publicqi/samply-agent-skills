@@ -34,7 +34,23 @@ samply record --save-only -o profile.json.gz -- ./your-command arg1 arg2
    - `test.profile.json.gz`
 
 5. Preserve symbol quality before recording:
-   - Rust: use optimized builds **with debug info**
+   - Rust: use optimized builds **with debug info**. A reusable Cargo profile:
+     ```toml
+     [profile.profiling]
+     inherits = "release"
+     debug = 2
+     split-debuginfo = "unpacked"  # macOS-friendly; lets dsymutil find object files
+     ```
+     Then `cargo build --profile profiling` and pass that binary to samply.
+   - **macOS-specific**: Rust release builds do NOT auto-generate a `.dSYM`
+     bundle. Without one, samply leaf coverage is often <40% and inline
+     frames are missing. After every rebuild, regenerate the dSYM and verify
+     the UUID matches:
+     ```bash
+     dsymutil ./target/profiling/<binary>
+     dwarfdump --uuid ./target/profiling/<binary> ./target/profiling/<binary>.dSYM
+     # both UUIDs must match; if they differ the dSYM is stale, regenerate.
+     ```
    - C/C++: keep `-g`
    - Windows: add `--windows-symbol-server https://msdl.microsoft.com/download/symbols` when system symbols matter
    - If local binaries or PDBs live outside default search paths, add `--symbol-dir PATH`
@@ -53,6 +69,17 @@ If supported by the installed version and symbol quality matters, prefer presymb
 
 ```bash
 samply record --unstable-presymbolicate --save-only -o profile.json.gz -- ./binary arg1 arg2
+```
+
+`--unstable-presymbolicate` writes resolved symbols to a sidecar file
+(`profile.json.syms.json`) **next to the profile**, not inside it. The
+samply-hotspots and samply-diffing skills auto-merge this sidecar when they
+load the profile. If you ever need a one-shot merged profile (for tools
+that do not share the auto-merge), run:
+
+```bash
+../samply-hotspots/scripts/merge_syms.py profile.json.gz
+# writes profile.merged.json.gz
 ```
 
 ## Attach to a running process
@@ -83,7 +110,16 @@ Prefer these defaults unless the task clearly calls for something else:
 - Use `--main-thread-only` only when the user explicitly wants lower overhead or only the main thread matters.
 - Use `--include-args` when command-line arguments are part of the diagnosis and the installed version supports it.
 - Do not claim Linux off-CPU visibility; Linux captures on-CPU samples only.
-- If attach duration is needed on samply 0.13.1, do not rely on `-d` alone for a clean stop on attached processes; drive termination explicitly if necessary.
+- `-d N` only bounds the sampling window; it does NOT force the child to
+  exit. For long-running daemons / REPLs / event loops in either launched
+  (`-- ./binary`) or attached (`-p PID`) mode on samply 0.13.1, samply will
+  keep waiting for the child after `-d` elapses. Stop the **child** with an
+  explicit `kill -INT <child_pid>` once you have enough samples — samply
+  then finalizes and writes the profile.
+- Never use `pkill -f <pattern>` to stop a samply child if the pattern
+  matches the samply command line too — it kills samply alongside the child
+  and the in-progress profile is lost. Match a unique substring of the
+  child's argv, or kill by PID.
 
 # Failure handling
 
@@ -95,8 +131,13 @@ Common causes:
 - Linux `perf_event_paranoid` or `perf_event_mlock_kb`
 - macOS trying to profile Apple-signed system binaries
 - macOS attach without `samply setup`
+- macOS Rust binary missing a `.dSYM` bundle (run `dsymutil`; verify UUID match)
+- macOS dSYM stale after rebuild (UUID mismatch — regenerate)
 - Windows recording without Administrator privileges
 - Poor symbols because the binary was stripped or debug info was omitted
+- Profile finalize never wrote because the long-running child never exited
+  (samply waits for child exit after `-d` elapses) — send SIGINT to the
+  child PID, not to samply, and not via `pkill -f`.
 
 # Output contract
 
