@@ -31,7 +31,42 @@ def parse_args() -> argparse.Namespace:
         "--top",
         type=int,
         default=15,
-        help="Maximum number of regressions and improvements to keep per section. Default: 15",
+        help=(
+            "Default cap for regressions/improvements per section. "
+            "Overridden by --top-functions and --top-stacks. Default: 15"
+        ),
+    )
+    parser.add_argument(
+        "--top-functions",
+        type=int,
+        default=None,
+        help="Cap for leaf and inclusive function regressions/improvements. Default: --top",
+    )
+    parser.add_argument(
+        "--top-stacks",
+        type=int,
+        default=None,
+        help="Cap for full-stack regressions/improvements. Default: --top",
+    )
+    parser.add_argument(
+        "--thread",
+        action="append",
+        default=[],
+        metavar="QUERY",
+        help=(
+            "Restrict to threads whose process_name or name contains QUERY "
+            "(case-insensitive substring). Repeat to keep multiple threads. "
+            "Aggregated thread keys are matched, so tids are not part of the haystack."
+        ),
+    )
+    parser.add_argument(
+        "--strict-coverage",
+        action="store_true",
+        help=(
+            "Exit non-zero (3) when leaf symbol coverage is poor on both sides "
+            "for every returned thread. Useful to fail fast in scripts before "
+            "trusting deltas."
+        ),
     )
     parser.add_argument(
         "--indent",
@@ -55,6 +90,9 @@ def main() -> int:
             baseline_source=args.baseline,
             candidate_source=args.candidate,
             top=args.top,
+            top_functions=args.top_functions,
+            top_stacks=args.top_stacks,
+            thread_filters=args.thread,
         )
     except FileNotFoundError as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -77,6 +115,21 @@ def main() -> int:
         sys.stdout.write("\n")
     else:
         sys.stdout.write(render_diff_markdown(report))
+
+    poor_coverage = any(
+        "poor leaf symbol coverage" in note.lower()
+        for note in report.get("notes", [])
+    )
+    if poor_coverage:
+        print(
+            "WARNING: leaf symbol coverage is poor on both sides for every "
+            "returned thread. Diff deltas may be misleading. Regenerate the "
+            ".dSYM, re-record with --unstable-presymbolicate, or pass "
+            "--symbol-dir before drawing conclusions.",
+            file=sys.stderr,
+        )
+        if args.strict_coverage:
+            return 3
     return 0
 
 

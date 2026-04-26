@@ -846,6 +846,11 @@ def diff_counter(
     return regressions, improvements
 
 
+def _aggregated_thread_matches(payload: Dict[str, Any], queries: List[str]) -> bool:
+    """Run summarizer-style substring matching against an aggregated thread payload."""
+    return _thread_matches(payload.get("thread") or {}, queries)
+
+
 def build_diff_report(
     baseline_analysis: Dict[str, Any],
     candidate_analysis: Dict[str, Any],
@@ -853,11 +858,28 @@ def build_diff_report(
     candidate_source: str,
     *,
     top: int = 15,
+    top_functions: Optional[int] = None,
+    top_stacks: Optional[int] = None,
+    thread_filters: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
+    if top_functions is None:
+        top_functions = top
+    if top_stacks is None:
+        top_stacks = top
+    filters = [q for q in (thread_filters or []) if q.strip()]
+
     base_grouped = aggregate_threads_for_diff(baseline_analysis)
     cand_grouped = aggregate_threads_for_diff(candidate_analysis)
 
     all_thread_keys = sorted(set(base_grouped) | set(cand_grouped))
+    if filters:
+        all_thread_keys = [
+            key
+            for key in all_thread_keys
+            if _aggregated_thread_matches(
+                base_grouped.get(key) or cand_grouped.get(key) or {}, filters
+            )
+        ]
 
     baseline_total = normalize_number(baseline_analysis["total_weighted_samples"])
     candidate_total = normalize_number(candidate_analysis["total_weighted_samples"])
@@ -880,21 +902,21 @@ def build_diff_report(
         global_cand_stack.update(payload["stack_counter"])
 
     global_leaf_regressions, global_leaf_improvements = diff_counter(
-        global_base_leaf, global_cand_leaf, baseline_total, candidate_total, top=top
+        global_base_leaf, global_cand_leaf, baseline_total, candidate_total, top=top_functions
     )
     global_inclusive_regressions, global_inclusive_improvements = diff_counter(
         global_base_inclusive,
         global_cand_inclusive,
         baseline_total,
         candidate_total,
-        top=top,
+        top=top_functions,
     )
     global_stack_regressions, global_stack_improvements = diff_counter(
         global_base_stack,
         global_cand_stack,
         baseline_total,
         candidate_total,
-        top=top,
+        top=top_stacks,
         stack_mode=True,
     )
 
@@ -930,21 +952,21 @@ def build_diff_report(
             cand["leaf_counter"],
             normalize_number(base["weighted_samples"]),
             normalize_number(cand["weighted_samples"]),
-            top=top,
+            top=top_functions,
         )
         inclusive_regressions, inclusive_improvements = diff_counter(
             base["inclusive_counter"],
             cand["inclusive_counter"],
             normalize_number(base["weighted_samples"]),
             normalize_number(cand["weighted_samples"]),
-            top=top,
+            top=top_functions,
         )
         stack_regressions, stack_improvements = diff_counter(
             base["stack_counter"],
             cand["stack_counter"],
             normalize_number(base["weighted_samples"]),
             normalize_number(cand["weighted_samples"]),
-            top=top,
+            top=top_stacks,
             stack_mode=True,
         )
 
@@ -994,11 +1016,25 @@ def build_diff_report(
             "stack_improvements": global_stack_improvements,
         },
         "threads": thread_rows,
-        "notes": [
-            "Deltas are normalized by each profile's weighted sample totals, not by raw sample counts.",
-            "Treat apparent regressions skeptically when symbol coverage is poor or weighted sample counts are low.",
-        ],
+        "notes": _build_diff_notes(thread_rows),
     }
+
+
+def _build_diff_notes(thread_rows: List[Dict[str, Any]]) -> List[str]:
+    notes = [
+        "Deltas are normalized by each profile's weighted sample totals, not by raw sample counts.",
+        "Treat apparent regressions skeptically when symbol coverage is poor or weighted sample counts are low.",
+    ]
+    if thread_rows and all(
+        row["baseline_leaf_symbol_coverage_pct"] < 60.0
+        and row["candidate_leaf_symbol_coverage_pct"] < 60.0
+        for row in thread_rows
+    ):
+        notes.append(
+            "Poor leaf symbol coverage on both sides for every returned thread; "
+            "the diff may be misleading."
+        )
+    return notes
 
 
 def render_diff_markdown(report: Dict[str, Any]) -> str:

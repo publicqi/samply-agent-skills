@@ -20,6 +20,22 @@ scripts/compare_profiles.py baseline.profile.json.gz candidate.profile.json.gz >
 scripts/compare_profiles.py --format markdown baseline.profile.json.gz candidate.profile.json.gz
 ```
 
+# Useful flags
+
+```bash
+# split caps for functions vs stacks
+scripts/compare_profiles.py --top-functions 20 --top-stacks 8 baseline.profile.json.gz candidate.profile.json.gz
+
+# restrict to specific threads (case-insensitive substring vs process_name / name; repeatable)
+scripts/compare_profiles.py --thread mininerv-cli baseline.profile.json.gz candidate.profile.json.gz
+
+# fail fast in scripts when coverage is too poor on both sides to trust the diff
+scripts/compare_profiles.py --strict-coverage baseline.profile.json.gz candidate.profile.json.gz \
+  || echo "regenerate dSYM / re-record with --unstable-presymbolicate"
+```
+
+`--strict-coverage` exits 3 (instead of 0) and prints a stderr banner when leaf coverage is poor on both sides for every returned thread.
+
 # Comparison discipline
 
 - Compare **percent share of weighted samples**, not raw counts.
